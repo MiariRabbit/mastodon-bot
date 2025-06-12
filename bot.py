@@ -1,3 +1,16 @@
+# 在文件顶部添加
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('马蹄小莲机器人')
+
+# 替换所有 print 为 logger.info
+# 例如：
+logger.info(f"开始运行机器人...")
 import requests
 import os
 import re
