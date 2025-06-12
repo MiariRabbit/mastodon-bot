@@ -25,6 +25,15 @@ jobs:
           sudo apt-get install -y sqlite3
           pip install requests
       
+      - name: 创建初始数据库
+        run: |
+          if [ ! -f processed_notifications.db ]; then
+            sqlite3 processed_notifications.db "CREATE TABLE processed (id TEXT PRIMARY KEY, created_at TIMESTAMP);"
+            echo "创建初始数据库"
+          else
+            echo "数据库已存在"
+          fi
+      
       - name: 运行机器人
         env:
           MASTODON_TOKEN: ${{ secrets.MASTODON_TOKEN }}
