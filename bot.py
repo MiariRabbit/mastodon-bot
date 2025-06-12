@@ -64,9 +64,9 @@ def run_bot():
     print(f"{datetime.now(timezone.utc).isoformat()} 开始运行机器人...")
     
     try:
-        # 设置时间范围（最近15分钟）
-        since_time = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
-        url = f"{INSTANCE_URL}/api/v1/notifications?types=mention&since={since_time}"
+        # 设置只检测最近30秒的消息
+since_time = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+notifications_url = f"{INSTANCE_URL}/api/v1/notifications?types=mention&since={since_time}"
         
         print(f"获取通知URL: {url}")
         
