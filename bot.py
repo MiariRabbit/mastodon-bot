@@ -23,6 +23,9 @@ def init_db():
                  (id TEXT PRIMARY KEY, created_at TIMESTAMP)''')
     conn.commit()
     conn.close()
+    # 删除7天前的记录
+cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+c.execute("DELETE FROM processed WHERE created_at < ?", (cutoff,))
 
 def is_processed(notification_id):
     """检查通知是否已处理"""
