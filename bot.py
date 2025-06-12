@@ -1,9 +1,8 @@
 import requests
 import os
 import re
-import json
-import time
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,34 +15,65 @@ DEEPSEEK_KEY = os.getenv('DEEPSEEK_KEY')
 DB_PATH = Path("processed_notifications.db")
 
 def init_db():
-    """初始化数据库"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS processed
-                 (id TEXT PRIMARY KEY, created_at TIMESTAMP)''')
-    conn.commit()
-    conn.close()
-    # 删除7天前的记录
-cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-c.execute("DELETE FROM processed WHERE created_at < ?", (cutoff,))
+    """初始化数据库并清理旧记录"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        # 创建表
+        c.execute('''CREATE TABLE IF NOT EXISTS processed
+                     (id TEXT PRIMARY KEY, created_at TIMESTAMP)''')
+        
+        # 清理7天前的记录
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        c.execute("DELETE FROM processed WHERE created_at < ?", (cutoff,))
+        
+        conn.commit()
+        print(f"数据库初始化完成，清理了 {c.rowcount} 条旧记录")
+    except sqlite3.Error as e:
+        print(f"数据库初始化错误: {str(e)}")
+        # 尝试重建数据库
+        if "no such table" in str(e):
+            try:
+                os.remove(DB_PATH)
+                print("重建数据库文件")
+                return init_db()  # 递归调用自身
+            except:
+                print("无法重建数据库文件")
+    finally:
+        if conn:
+            conn.close()
 
 def is_processed(notification_id):
     """检查通知是否已处理"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id FROM processed WHERE id=?", (notification_id,))
-    result = c.fetchone()
-    conn.close()
-    return result is not None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT id FROM processed WHERE id=?", (notification_id,))
+        result = c.fetchone()
+        return result is not None
+    except sqlite3.Error as e:
+        print(f"检查处理状态错误: {str(e)}")
+        return False  # 出错时视为未处理
+    finally:
+        if conn:
+            conn.close()
 
 def mark_processed(notification_id):
     """标记通知为已处理"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT INTO processed (id, created_at) VALUES (?, ?)", 
-              (notification_id, datetime.now(timezone.utc).isoformat()))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO processed (id, created_at) VALUES (?, ?)", 
+                  (notification_id, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"标记已处理错误: {str(e)}")
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 # ===== 工具函数 =====
 def extract_text(html):
@@ -76,8 +106,12 @@ def call_deepseek(prompt):
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         else:
+            error_msg = f"DeepSeek API错误: {response.status_code}"
+            print(error_msg)
             return f"抱歉，我现在有点忙，稍后再聊好吗？(；′⌒`) [错误: {response.status_code}]"
     except Exception as e:
+        error_msg = f"DeepSeek调用异常: {str(e)}"
+        print(error_msg)
         return f"啊啦，我的小脑袋有点混乱了...请再说一次好吗？(>_<) [错误: {str(e)[:30]}]"
 
 # ===== 主业务逻辑 =====
@@ -113,6 +147,7 @@ def run_bot():
         for note in notifications:
             # 检查通知格式
             if 'status' not in note or not isinstance(note['status'], dict):
+                print("无效通知格式，跳过")
                 continue
                 
             notification_id = note["id"]
@@ -158,8 +193,10 @@ def run_bot():
                     if resp.status_code == 200:
                         print(f"成功回复 @{account_name}")
                         # 标记为已处理
-                        mark_processed(notification_id)
-                        processed_count += 1
+                        if mark_processed(notification_id):
+                            processed_count += 1
+                        else:
+                            print("标记已处理失败，但回复已发送")
                     else:
                         print(f"回复失败: HTTP {resp.status_code}")
                 except Exception as e:
@@ -167,7 +204,7 @@ def run_bot():
             else:
                 print("通知不包含触发词，跳过")
                 
-        print(f"处理完成，回复了 {processed_count} 条通知")
+        print(f"处理完成，成功回复了 {processed_count} 条通知")
         
     except Exception as e:
         print(f"运行出错: {str(e)}")
